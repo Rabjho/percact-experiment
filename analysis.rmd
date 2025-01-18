@@ -1,0 +1,328 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r setup, include=FALSE}
+# Set working directory knitr
+knitr::opts_knit$set(root.dir = "C:\\Users\\Rabjho\\OneDrive - Aarhus universitet\\Perception and Action\\Exam\\percact-experiment")
+setwd("C:\\Users\\Rabjho\\OneDrive - Aarhus universitet\\Perception and Action\\Exam\\percact-experiment")
+
+pacman::p_load(tidyverse, psycho, lme4)
+
+
+```
+
+```{r}
+participant_data <- read_csv("data/participant_data.csv")
+trial_data <- read_csv("data/trial_data.csv")
+```
+```{r}
+trial_data %>% filter(trial_id == 0) %>% count(response)
+```
+
+
+
+
+```{r}
+# Count how many trials are "timeout" in the response col
+trial_data %>%
+  count(response)
+
+# Filter them out
+trial_data <- trial_data %>%
+  filter(response != "timeout")
+```
+
+
+
+
+
+```{r}
+confusion_matrices <- trial_data %>%
+  group_by(subject_id) %>%
+  summarize(
+    n_hit = sum(stimuli_type == "signal" & response == "signal"),
+    n_fp = sum(stimuli_type == "noise" & response == "signal"),
+    n_miss = sum(stimuli_type == "signal" & response == "noise"),
+    n_tn = sum(stimuli_type == "noise" & response == "noise")
+  )
+
+confusion_matrices
+
+```
+
+```{r}
+# Join the confusion_matrices to participant_data on "subject_id"
+df <- participant_data %>%
+  left_join(confusion_matrices, by = "subject_id")
+
+# Subject "6e33243b-9c08-4e69-81db-d5a0baab9bbf" has a wrongful NA in "unusual perceptual experiences". It is something with the loading as the CSV clearly has a 0. This is fixed.
+df$`unusual perceptual experiences`[is.na(df$`unusual perceptual experiences`)] <- 0
+
+# Filter out rows with NA
+df <- df %>%
+  filter(!is.na(n_hit))
+
+df$subject_id <- as.factor(df$subject_id)
+df$age <- as.integer(df$age)
+df$`ideas of reference` <- as.integer(df$`ideas of reference`)
+df$`magical thinking` <- as.integer(df$`magical thinking`)
+df$`unusual perceptual experiences` <- as.integer(df$`unusual perceptual experiences`)
+
+df$total_trials <- df$n_hit + df$n_fp + df$n_miss + df$n_tn
+df$accuracy <- (df$n_hit + df$n_tn) / df$total_trials
+df$n_distractors <- df$n_fp + df$n_tn
+df$n_targets <- df$n_hit + df$n_miss
+
+df$schizotypy <- df$`ideas of reference` + df$`magical thinking` + df$`unusual perceptual experiences`
+
+df
+```
+
+
+```{r}
+# Calculate the d' for each participant
+indices <- psycho::dprime(df$n_hit, df$n_fp, df$n_miss, df$n_tn)
+
+indices <- as.data.frame(indices)
+
+df <- df %>% 
+  bind_cols(indices %>% select(-any_of(names(df))))
+
+df$beta_centralized <- df$beta - 1
+```
+
+
+```{r}
+
+# Fit regression for sensitivity
+model_dprime <- lmer(dprime ~ schizotypy + age + social_media_time + news_time + content_creation_time + fact_checking_time + (1 | gender), data = df)
+
+summary(model_dprime)
+
+```
+
+```{r}
+# Fit regression for bias (beta)
+model_beta <- lmer(beta ~ schizotypy + age + social_media_time + news_time + content_creation_time + fact_checking_time + (1 | gender), data = df)
+
+summary(model_beta)
+
+```
+
+```{r}
+model_beta_minimal <- lm(beta ~ schizotypy, data = df)
+summary(model_beta_minimal)
+```
+
+```{r}
+model_dprime_minimal <- lm(dprime ~ schizotypy, data = df)
+summary(model_dprime_minimal)
+```
+
+
+
+```{r}
+# Do hypothesis testing
+# Sensitivity
+reduced_dprime <- lmer(dprime ~ age + social_media_time + news_time + content_creation_time + fact_checking_time + (1 | gender), data = df)
+anova(model_dprime, reduced_dprime)
+```
+
+```{r}
+# Bias
+reduced_beta <- lmer(beta ~ age + social_media_time + news_time + content_creation_time + fact_checking_time + (1 | gender), data = df)
+anova(model_beta, reduced_beta)
+```
+
+```{r}
+# Do hypothesis testing for minimal models
+null_dprime <- lm(dprime ~ 1, data = df)
+anova(model_dprime_minimal, null_dprime)
+```
+
+```{r}
+null_beta <- lm(beta ~ 1, data = df)
+anova(model_beta_minimal, null_beta)
+```
+
+```{r}
+# Try to predict only false-positives
+model_fp <- lmer(n_fp ~ schizotypy + age + social_media_time + news_time + content_creation_time + fact_checking_time + (1 | gender), data = df)
+summary(model_fp)
+```
+
+
+```{r}
+model_fp_minimal <- lm(n_fp ~ schizotypy, data = df)
+summary(model_fp_minimal)
+```
+
+```{r}
+# Do hypothesis testing
+reduced_fp <- lmer(n_fp ~ age + social_media_time + news_time + content_creation_time + fact_checking_time + (1 | gender), data = df)
+anova(model_fp, reduced_fp)
+
+```
+```{r}
+null_fp <- lm(n_fp ~ 1, data = df)
+anova(model_fp_minimal, null_fp)
+```
+
+
+
+```{r}
+# Get participant info for the paper
+
+summary(df$age)
+sd(df$age)
+
+df$gender %>% 
+  table()
+
+
+```
+
+
+
+
+
+
+
+```{r}
+# Get the means and standard deviations for the schizotypy scores
+df %>%
+  summarize(
+    mean_schizotypy = mean(schizotypy),
+    sd_schizotypy = sd(schizotypy),
+    min = min(schizotypy),
+    median = median(schizotypy),
+    max = max(schizotypy)
+  )
+```
+
+```{r}
+# Get the means and standard deviations for the d' scores
+df %>%
+  summarize(
+    mean_dprime = mean(dprime),
+    sd_dprime = sd(dprime),
+    min = min(dprime),
+    median = median(dprime),
+    max = max(dprime)
+  )
+```
+
+```{r}
+# Get the means and standard deviations for the beta scores
+df %>%
+  summarize(
+    mean_beta = mean(beta),
+    sd_beta = sd(beta),
+    min = min(beta),
+    median = median(beta),
+    max = max(beta)
+  )
+```
+
+```{r}
+# Get the means and standard deviations for the 4 "time_spent" variables
+df %>%
+  summarize(
+    mean_social_media_time = mean(social_media_time),
+    sd_social_media_time = sd(social_media_time),
+    min = min(social_media_time),
+    median = median(social_media_time),
+    max = max(social_media_time)
+  )
+
+df %>%
+  summarize(
+    mean_news_time = mean(news_time),
+    sd_news_time = sd(news_time),
+    min = min(news_time),
+    median = median(news_time),
+    max = max(news_time)
+  )
+
+df %>%
+  summarize(
+    mean_content_creation_time = mean(content_creation_time),
+    sd_content_creation_time = sd(content_creation_time),
+    min = min(content_creation_time),
+    median = median(content_creation_time),
+    max = max(content_creation_time)
+  )
+
+df %>%
+  summarize(
+    mean_fact_checking_time = mean(fact_checking_time),
+    sd_fact_checking_time = sd(fact_checking_time),
+    min = min(fact_checking_time),
+    median = median(fact_checking_time),
+    max = max(fact_checking_time)
+  )
+```
+
+```{r}
+# aggregate the confusion_matrices into a single confusion matrix
+confusion_matrices_agg <- df %>%
+  summarize(
+    n_hit = sum(n_hit),
+    n_fp = sum(n_fp),
+    n_miss = sum(n_miss),
+    n_tn = sum(n_tn)
+  )
+
+confusion_matrices_agg$accuracy <- (confusion_matrices_agg$n_hit + confusion_matrices_agg$n_tn) / sum(confusion_matrices_agg)
+
+confusion_matrices_agg
+```
+
+```{r}
+# Calculate the d' for the aggregated confusion matrix
+indices_agg <- as.data.frame(psycho::dprime(confusion_matrices_agg$n_hit, confusion_matrices_agg$n_fp, confusion_matrices_agg$n_miss, confusion_matrices_agg$n_tn))
+indices_agg 
+```
+
+
+
+```{r}
+confusion_matrices_agg$correct <- confusion_matrices_agg$n_hit + confusion_matrices_agg$n_tn
+confusion_matrices_agg$incorrect <- confusion_matrices_agg$n_fp + confusion_matrices_agg$n_miss
+
+binom.test(confusion_matrices_agg$correct, sum(confusion_matrices_agg$correct, confusion_matrices_agg$incorrect), p = 0.5, alternative = "two.sided")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
