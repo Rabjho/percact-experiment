@@ -8,7 +8,7 @@ output:
 knitr::opts_knit$set(root.dir = "C:\\Users\\Rabjho\\OneDrive - Aarhus universitet\\Perception and Action\\Exam\\percact-experiment")
 setwd("C:\\Users\\Rabjho\\OneDrive - Aarhus universitet\\Perception and Action\\Exam\\percact-experiment")
 
-pacman::p_load(tidyverse, psycho, lme4)
+pacman::p_load(tidyverse, psycho, lme4, Cairo)
 
 
 ```
@@ -32,6 +32,11 @@ trial_data %>%
 # Filter them out
 trial_data <- trial_data %>%
   filter(response != "timeout")
+
+# Filter out rows where trial_id < 5 (for testing)
+trial_data <- trial_data %>%
+  filter(trial_id > 3)
+
 ```
 
 
@@ -301,6 +306,62 @@ binom.test(confusion_matrices_agg$correct, sum(confusion_matrices_agg$correct, c
 
 
 
+```{r}
+# Generate data for the distributions
+x <- seq(-3, 5, by = 0.01)
+noise_only <- dnorm(x, mean = 0, sd = 1)
+noise_signal <- dnorm(x, mean = 2, sd = 1)
+
+# Create a data frame for plotting
+data <- data.frame(
+  x = rep(x, 2),
+  y = c(noise_only, noise_signal),
+  Distribution = rep(c("Noise only", "Noise + signal"), each = length(x))
+)
+
+plot_sensitivity_height <- 0.5
+decision_criterion <- 0.75
+
+# Create the combined plot
+plot <- ggplot(data, aes(x = x, y = y, color = Distribution)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Signal Detection Theory",
+    x = "Sensory Magnitude",
+    y = "Probability",
+    color = "Distribution"
+  ) +
+  scale_color_manual(values = c("Noise only" = "blue", "Noise + signal" = "black")) +
+  xlim(-4, 6) +
+  ylim(0, 0.6) +
+  # add dashed lines at the two signal distributions means
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 2, linetype = "dashed") +
+  # add arrow between the two signal distributions
+  geom_segment(x = 0, xend = 2, y = plot_sensitivity_height, yend = plot_sensitivity_height, arrow = arrow(ends = "both"), show.legend = FALSE) +
+  
+  # add the label for the arrow
+  annotate("text", x = 1, y = plot_sensitivity_height + 0.05, label = "Sensitivity", size = 4) +
+  
+  # add vline at the decision criterion
+  geom_segment(x = decision_criterion, xend = decision_criterion, y = 0.4, yend = 0, arrow = arrow(), show.legend = FALSE) +
+  # add the label
+  annotate("text", x = decision_criterion, y = 0.42, label = "Bias", size = 4) +
+  
+  
+  theme_minimal() +
+  # set x_ticks to 1
+  geom_hline(yintercept = 0, color = "black", size = 0.5) +
+  scale_x_continuous(breaks = seq(-4, 6, by = 1)) + 
+  theme(
+    legend.position = c(0.8, 0.8),
+    legend.background = element_rect(fill = "white", color = "black")
+  )
+
+plot
+
+ggsave(plot, type = "cairo", file = "figures/sdt_plot.png", bg = "white")
+```
 
 
 
